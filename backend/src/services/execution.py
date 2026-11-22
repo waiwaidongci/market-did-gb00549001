@@ -1,17 +1,44 @@
 import logging
 from datetime import date, timedelta
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select
 from src.config.database import Session
 from src.constants.enums import Status
 from src.domain.analysis import analyze
 from src.domain.spec import SPEC
-from src.models.jobs import Delivery, Run, Schedule
+from src.models.jobs import Checkpoint, Delivery, Run, Schedule
 from src.models.source import Dataset
 from src.services.audit import record
 from src.utils.exports import write_report
 from src.utils.time import now
 
 log = logging.getLogger(__name__)
+
+
+class RunCheckpoint:
+    """把置换计数的绝对进度落到数据库，供中断后的重试续跑。"""
+
+    def __init__(self, run_id):
+        self.run_id = run_id
+
+    def load(self):
+        with Session() as db:
+            row = db.get(Checkpoint, self.run_id)
+            if row is None:
+                return None
+            return {"signature": row.signature, "index": row.index, "count": row.count,
+                    "phase": row.phase}
+
+    def save(self, state):
+        with Session.begin() as db:
+            row = db.get(Checkpoint, self.run_id, with_for_update=True)
+            if row is None:
+                row = Checkpoint(run_id=self.run_id)
+                db.add(row)
+            row.signature = state["signature"]
+            row.index = state["index"]
+            row.count = state["count"]
+            row.phase = state["phase"]
+            row.updated_at = now()
 
 
 def materialize_due():
@@ -52,6 +79,7 @@ def claim():
             job.status = Status.FAILED
             job.error = '后台进程多次中断，请发起新的运行'
             job.finished_at = stamp
+            db.execute(delete(Checkpoint).where(Checkpoint.run_id == job.id))
             record(db, 'worker', 'analysis.failed', job.id, reason=job.error)
             return None
         job.status = Status.RUNNING
@@ -65,7 +93,7 @@ def execute(lease):
     job_id, attempt, rows, params = lease
     result = export = failure = None
     try:
-        result = analyze(rows, params)
+        result = analyze(rows, params, checkpoint=RunCheckpoint(job_id))
         export = write_report(job_id, attempt, result)
     except ValueError as error:
         failure = str(error)[:500]
@@ -82,6 +110,7 @@ def execute(lease):
         job.result = None if failure else result
         job.export_file = export
         job.error = failure
+        db.execute(delete(Checkpoint).where(Checkpoint.run_id == job_id))
         record(db, 'worker', f'analysis.{job.status}', job.id, attempt=attempt, reason=failure)
         if job.schedule_id:
             plan = db.get(Schedule, job.schedule_id)

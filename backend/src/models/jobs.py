@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from src.config.database import Base
 from src.constants.enums import Review, Status
@@ -50,3 +50,16 @@ class Delivery(Base):
     state: Mapped[str] = mapped_column(String(20))
     detail: Mapped[str] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(default=now)
+
+
+class Checkpoint(Base):
+    """置换计数的绝对进度，用于中断后续跑且不重复累计。"""
+
+    __tablename__ = 'run_checkpoints'
+
+    run_id: Mapped[int] = mapped_column(ForeignKey('runs.id'), primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64))
+    index: Mapped[int] = mapped_column(BigInteger, default=0)
+    count: Mapped[int] = mapped_column(BigInteger, default=0)
+    phase: Mapped[str] = mapped_column(String(20), default='count')
+    updated_at: Mapped[datetime] = mapped_column(default=now, onupdate=now)

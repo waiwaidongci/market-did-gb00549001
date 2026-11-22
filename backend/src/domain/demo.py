@@ -1,12 +1,13 @@
-"""固定的门岗日汇总，包含一个试点后缺报的对照市场。"""
+"""固定的门岗日汇总，包含一个试点后缺报的配对市场。"""
 
 from datetime import date, timedelta
 
 
 _MARKETS = (
-    ("南桥", "试点组", 32), ("西苑", "试点组", 36), ("滨河", "试点组", 40),
-    ("新街", "对照组", 24), ("石桥", "对照组", 28), ("北仓", "对照组", 32),
-    ("东埠", "对照组", 48),
+    ("南桥", "试点组", "桥南片", 32), ("西苑", "试点组", "西片", 36),
+    ("滨河", "试点组", "河东片", 40), ("东塘", "试点组", "北片", 44),
+    ("新街", "对照组", "桥南片", 24), ("石桥", "对照组", "西片", 28),
+    ("东埠", "对照组", "河东片", 48), ("北仓", "对照组", "北片", 32),
 )
 
 
@@ -17,12 +18,12 @@ def demo_rows():
     for offset in range(21):
         day = start + timedelta(days=offset)
         week, weekday = divmod(offset, 7)
-        for index, (market, group, baseline) in enumerate(_MARKETS):
+        for index, (market, group, pair, baseline) in enumerate(_MARKETS):
             if market == "东埠" and day == date(2026, 11, 12):
                 continue
             reduction = 8 if week == 2 and group == "试点组" else 0
             rows.append({
-                "market_id": market, "date": day.isoformat(), "group": group,
+                "market_id": market, "pair_id": pair, "date": day.isoformat(), "group": group,
                 "wait_minutes": baseline + 2 * week + weekday_adjustment[weekday] - reduction,
                 "truck_count": 24 + 5 * index + 2 * weekday,
             })
